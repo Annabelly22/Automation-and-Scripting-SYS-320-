@@ -1,0 +1,33 @@
+# Storyline: Review the Security Event Log
+# Directory to save files:
+SmyDir = "C: \Users\dunston\Desktop\"
+# List all the
+available windows Event logs
+Get-EventLog -list
+* Create a prompt to allow user to select the Log to view
+Sreadlog = Read-host -Prompt "Please select a log to review from the list above"
+# Print the results for the log
+Get-EventLog -LogName sreadLog
+-Newest 40 | where {S. Message -ilike "*new process has been*" } | export-csv - NoTypeInfo
+-Path "SmyDir \securityLogs. CSv"
+# Create a prompt that allows the user to specify a keyword or phrase to search on
+$searchKeyword = Read-Host -Prompt "Enter a keyword or phrase to search for in the event logs"
+
+# Filter the log entries based on the specified keyword
+$filteredEntries = $eventLogEntries | Where-Object { $_.Message -like "*$searchKeyword*" }
+
+if ($filteredEntries.Count -gt 0) {
+    # Export the filtered log entries to a CSV file
+    $filteredEntries | Export-Csv -NoTypeInformation -Path "$myDir\securityLogs.csv"
+    Write-Host "Filtered log entries have been saved to $myDir\securityLogs.csv"
+} else {
+    Write-Host "No log entries found matching the specified keyword: $searchKeyword"
+}
+This script will first prompt the user to select a specific Windows Event log and then prompt them to enter a keyword or phrase to search for within that log. If no entries match the keyword, it will inform the user accordingly.
+
+
+
+
+
+
+
