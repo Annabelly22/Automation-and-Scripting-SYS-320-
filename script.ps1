@@ -1,105 +1,37 @@
-# Replace with your actual username
-$remoteUsername = "username"    
+# Array of URLs containing threat intelligence data
+$drop_urls = @("https://rules.emergingthreats.net/blockrules/emerging-botcc.rules", "https://rules.emergingthreats.net/blockrules/compromised-ips.txt")
 
-# Replace with your actual host
-$remoteHost = "remote-ssh.com" 
+# Array to store downloaded file names
+$input_files = @();
 
-# Default SSH port
-$remotePort = 22 
+# File to store bad IPs in iptables format
+$bad_ips = "bad_ips.txt"
 
-# Replace with your actual password
-$remotePassword = "password" 
+# Loop through each URL in $drop_urls
+foreach ($url in $drop_urls) {
+    # Extract the file name from the URL
+    $file_name = $url.Split('/')[-1]
 
-# clear the screen
-Clear-Host
+    # Check if the file does not exist, then download it
+    if (!(Test-Path $file_name)) {
+        Invoke-WebRequest -Uri $url -OutFile $file_name
+    }
 
-# create credentials object
-$credential = (New-Object System.Management.Automation.PSCredential($remoteUsername, (ConvertTo-SecureString -String $remotePassword -AsPlainText -Force)))
-
-# Establish SSH session
-$session = New-SSHSession -ComputerName $remoteHost -Credential $credential -Port $remotePort
-
-# Function to display help information
-function Show-Help {
-    Write-Host "Available Windows Commands:"
-    Write-Host "  exit       - Quit the script"
-    Write-Host "  clear      - Clear the screen"
-    Write-Host "  send       - Send a file to the server"
-    Write-Host "  download   - Download a file from the server"
-    Write-Host "  help       - Show this help message"
+    # Add file to the input_files array
+    $input_files += $file_name
 }
 
-# Check if the session was established successfully
-if ($session) {
-    Write-Host "Connected to $remoteHost"
+# Regular expression to extract IP addresses from files
+$regex = "\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"
 
-    try {
-        # Infinite loop for user input
-        while ($true) {
-            # Ask for input
-            $inputCommand = Read-Host "Enter command (type 'exit' to quit, 'help' for command list):"
+# Use Select-String to find IP addresses in the input_files
+Select-String -Path $input_files -Pattern $regex | 
+    ForEach-Object { $_.Matches } | 
+    ForEach-Object { $_.Value } | 
+    Sort-Object -Unique | 
+    Out-File -FilePath $bad_ips
 
-            # Exit the loop if the user enters 'exit'
-            if ($inputCommand -eq 'exit') {
-                break
-            }
-            if ($inputCommand -eq '') {
-                continue
-            }
-
-            # Check for the 'clear' command
-            if ($inputCommand -eq 'clear') {
-                Clear-Host
-                continue
-            }
-
-            # Check for the 'send' command
-            if ($inputCommand -eq 'send') {
-                # Prompt user for local and remote file paths
-                $localFilePath = Read-Host "Enter local file path:"
-                $remoteFilePath = Read-Host "Enter remote file path:"
-
-                # Send the file to the server using scp
-                Set-SCPItem -ComputerName "$remoteHost" -Path "$localFilePath" -Credential $credential  -Port "$remotePort" -Destination "$remoteFilePath"
-
-                Write-Host "File sent successfully."
-                continue
-            }
-
-            # Check for the 'download' command
-            if ($inputCommand -eq 'download') {
-                # Prompt user for remote and local file paths
-                $remoteFilePath = Read-Host "Enter remote file path:"
-                $localFilePath = Read-Host "Enter local file path:"
-
-                # Download the file from the server using scp
-                Get-SCPItem -PathType File -ComputerName $remoteHost -Port $remotePort -Credential $credential -Path $remoteFilePath -Destination $localFilePath
-                Write-Host "File downloaded successfully."
-                continue
-            }
-
-            # Check for the 'help' command
-            if ($inputCommand -eq 'help') {
-                Show-Help
-                continue
-            }
-
-            # Invoke the SSH command
-            $output = Invoke-SSHCommand -SessionId $session.SessionId -Command $inputCommand
-
-            # Display the output
-            $output.Output
-        }
-    }
-    catch {
-        Write-Host "Error: $_"
-    }
-    finally {
-        # Close the SSH session
-        Remove-SSHSession -SessionId $session.SessionId
-        Write-Host "Disconnected from $remoteHost"
-    }
-}
-else {
-    Write-Host "Failed to connect to $remoteHost"
-}
+# Read content from bad_ips.txt and format it for iptables
+(Get-Content -Path $bad_ips) | 
+    ForEach-Object { $_ -replace "^", "iptables -A INPUT -s " -replace "$", " -J DROP" } | 
+    Out-File -FilePath "iptables.sh"
